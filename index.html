@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#123a78">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Comunicação">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Comunicação Rápida</title>
+
+<style>
+:root{
+  --bg:#eef3f9; --card:#fff; --ink:#142033; --muted:#6a7689;
+  --blue:#1d5ff2; --blue2:#123a78; --line:#d9e2ef;
+  --green:#138a5b; --red:#c62828; --amber:#f5a300;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+html{-webkit-text-size-adjust:100%}
+body{min-height:100vh;min-height:100dvh;padding-bottom:calc(84px + env(safe-area-inset-bottom))}
+button,input{font:inherit}
+button{touch-action:manipulation;user-select:none;-webkit-user-select:none;cursor:pointer;transition:transform .08s,filter .08s}
+button:active{transform:scale(.96);filter:brightness(.92)}
+header{
+  padding:calc(12px + env(safe-area-inset-top)) 14px 12px;
+  background:linear-gradient(135deg,var(--blue2),var(--blue));color:#fff;
+}
+header h1{margin:0;font-size:20px;font-weight:900}
+header p{margin:3px 0 0;font-size:13px;opacity:.9}
+main{max-width:900px;margin:auto;padding:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:12px;margin-bottom:12px;box-shadow:0 5px 18px rgba(23,42,70,.07)}
+.label{font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:7px}
+
+/* Frase fica sempre visível no topo enquanto rola */
+.sentence-card{position:sticky;top:calc(6px + env(safe-area-inset-top));z-index:10;box-shadow:0 8px 24px rgba(23,42,70,.16)}
+#sentence{
+  min-height:84px;border:2px solid #bcd0ff;background:#f8fbff;border-radius:18px;
+  padding:12px 14px;font-size:26px;line-height:1.22;font-weight:850;display:flex;align-items:center;word-break:break-word
+}
+#sentence.empty{color:#94a3b8;font-size:18px;font-weight:700}
+.action-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:9px}
+.action{min-height:56px;border:0;border-radius:14px;font-weight:900;font-size:14px;line-height:1.1;padding:4px}
+.action .ico{display:block;font-size:20px;margin-bottom:2px}
+.primary{background:var(--blue);color:#fff}
+.dark{background:#263246;color:#fff}
+.soft{background:#eaf0ff;color:#173d89;border:1px solid #c7d7ff}
+.danger-soft{background:#fee8e8;color:#9b1c1c;border:1px solid #ffcaca}
+
+.section-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+.section-head h2{font-size:17px;margin:0}
+.hint{font-size:12px;color:var(--muted)}
+.quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.quick{
+  min-height:72px;border-radius:16px;border:1px solid var(--line);background:#f8fafc;
+  padding:10px;font-size:17px;font-weight:850;line-height:1.15;color:var(--ink)
+}
+.quick.good{background:#eaf8f2;border:2px solid #b8e6d1;color:#0f704d}
+.quick.bad{background:#fdecec;border:2px solid #f5c6c6;color:#9e1b1b}
+.quick.alert{background:#fff3e3;border:2px solid #ffd38b;color:#7a4600}
+
+.recent{display:flex;flex-direction:column;gap:7px}
+.recent button{min-height:50px;text-align:left;border-radius:14px;border:1px solid var(--line);background:#f8fafc;padding:10px 12px;font-size:16px;font-weight:750;color:var(--ink)}
+.empty-note{font-size:14px;color:var(--muted);margin:0}
+
+.tabs{display:flex;overflow-x:auto;gap:7px;padding:1px 1px 9px;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:0 0 auto;min-height:44px;border-radius:999px;border:1px solid var(--line);padding:0 14px;background:#eef2f7;font-weight:850;font-size:15px;color:#334155}
+.tab.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.words{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+.word{min-height:58px;border-radius:14px;border:1px solid #cfd8e7;background:#fff;font-size:17px;font-weight:800;color:#1f2a3c;padding:6px;line-height:1.1}
+
+.pain{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.pain button{min-height:54px;border-radius:13px;border:0;font-weight:950;font-size:20px;color:#fff}
+.pain-legend{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:6px}
+
+.custom{display:grid;grid-template-columns:1fr auto;gap:8px}
+.custom input{min-width:0;height:54px;border-radius:14px;border:1px solid #cfd8e7;padding:0 12px;font-size:18px;background:#fff}
+.custom button{border:0;border-radius:14px;background:var(--blue);color:#fff;font-weight:900;padding:0 18px}
+
+.bottom{
+ position:fixed;left:0;right:0;bottom:0;z-index:20;background:rgba(255,255,255,.97);
+ border-top:1px solid var(--line);padding:8px 10px calc(8px + env(safe-area-inset-bottom));
+ -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)
+}
+.bottom-in{max-width:900px;margin:auto;display:grid;grid-template-columns:1fr 1fr 1.35fr;gap:7px}
+.bottom button{min-height:58px;border:0;border-radius:14px;color:#fff;font-weight:950;font-size:17px;line-height:1.1}
+.yes{background:var(--green)} .no{background:var(--red)} .help{background:var(--amber);color:#312100!important}
+
+#overlay{
+ display:none;position:fixed;inset:0;z-index:999;background:#0f172a;color:#fff;
+ padding:calc(24px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
+ align-items:center;justify-content:center;flex-direction:column;text-align:center
+}
+#overlay.show{display:flex}
+#overlayText{font-weight:950;font-size:clamp(36px,11vw,90px);line-height:1.08;word-break:break-word;max-height:70vh;overflow-x:hidden;overflow-y:auto;width:100%;scrollbar-width:none}
+.overlay-actions{display:flex;gap:10px;margin-top:30px}
+.overlay-actions button{border:0;border-radius:14px;padding:16px 22px;font-weight:900;font-size:18px}
+#btnOverlaySpeak{background:var(--blue);color:#fff}
+#btnCloseOverlay{background:#fff;color:#172033}
+#overlay.alertmode{background:#b91c1c}
+
+#toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#1e293b;color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;font-weight:700;opacity:0;pointer-events:none;transition:opacity .2s;z-index:1000;max-width:90vw;text-align:center}
+#toast.show{opacity:1}
+
+@media(min-width:700px){
+ .quick-grid{grid-template-columns:repeat(4,1fr)}
+ .words{grid-template-columns:repeat(5,1fr)}
+ .pain{grid-template-columns:repeat(11,1fr)}
+}
+@media(max-width:360px){
+ .words{grid-template-columns:1fr 1fr}
+ .action{font-size:12px}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Comunicação rápida</h1>
+  <p>Toque para escolher. “Falar” lê a frase em voz alta.</p>
+</header>
+
+<main>
+  <section class="card sentence-card">
+    <div id="sentence" class="empty" aria-live="polite">Toque em uma frase ou palavra abaixo.</div>
+    <div class="action-grid">
+      <button type="button" class="action primary" id="btnSpeak"><span class="ico">🔊</span>Falar</button>
+      <button type="button" class="action dark" id="btnBig"><span class="ico">🔎</span>Grande</button>
+      <button type="button" class="action soft" id="btnBack"><span class="ico">⌫</span>Apagar</button>
+      <button type="button" class="action danger-soft" id="btnClear"><span class="ico">✕</span>Limpar</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-head"><h2>⚡ Frases rápidas</h2><span class="hint">1 toque</span></div>
+    <div class="quick-grid" id="quickGrid"></div>
+  </section>
+
+  <section class="card" id="builder">
+    <div class="section-head"><h2>🧩 Montar frase</h2><span class="hint">toque em sequência</span></div>
+    <div class="tabs" id="tabs"></div>
+    <div class="words" id="wordArea"></div>
+  </section>
+
+  <section class="card">
+    <div class="section-head"><h2>😣 Nível de dor</h2><span class="hint">toque no número</span></div>
+    <div class="pain" id="painGrid"></div>
+    <div class="pain-legend"><span>0 = sem dor</span><span>10 = pior dor</span></div>
+  </section>
+
+  <section class="card">
+    <div class="section-head"><h2>🕘 Últimas frases</h2><span class="hint">toque para repetir</span></div>
+    <div class="recent" id="recentList"></div>
+  </section>
+
+  <section class="card">
+    <div class="section-head"><h2>✍️ Digitar algo</h2></div>
+    <div class="custom">
+      <input id="customText" type="text" inputmode="text" enterkeyhint="done" placeholder="Digite aqui..." autocomplete="off" autocapitalize="sentences">
+      <button type="button" id="btnUse">Usar</button>
+    </div>
+  </section>
+</main>
+
+<div class="bottom">
+  <div class="bottom-in">
+    <button type="button" class="yes" data-fixed="Sim.">👍 SIM</button>
+    <button type="button" class="no" data-fixed="Não.">👎 NÃO</button>
+    <button type="button" class="help" data-fixed="Preciso de ajuda agora!" data-alert="1">🆘 AJUDA</button>
+  </div>
+</div>
+
+<div id="overlay" role="dialog" aria-modal="true">
+  <div id="overlayText"></div>
+  <div class="overlay-actions">
+    <button type="button" id="btnOverlaySpeak">🔊 Falar</button>
+    <button type="button" id="btnCloseOverlay">Fechar</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var PLACEHOLDER = "Toque em uma frase ou palavra abaixo.";
+  var RECENT_KEY = "comunicacao.recentes";
+  var sentenceEl = document.getElementById("sentence");
+  var overlay = document.getElementById("overlay");
+
+  // words: palavras da frase em construção; locked = frase pronta (próxima palavra começa frase nova)
+  var words = [];
+  var locked = false;
+
+  var quick = [
+    ["✅ SIM","Sim.","good"],
+    ["❌ NÃO","Não.","bad"],
+    ["😣 Estou com dor","Estou com dor.","alert"],
+    ["📍 Onde dói…","Está doendo", "alert", "Corpo"],
+    ["🫁 Falta de ar","Estou com falta de ar.","alert"],
+    ["🩺 Chame a equipe","Chame o médico ou a enfermagem, por favor.","alert"],
+    ["💧 Quero água","Quero água, por favor.",""],
+    ["🚻 Ir ao banheiro","Quero ir ao banheiro.",""],
+    ["🛏️ Mudar de posição","Quero mudar de posição.",""],
+    ["⬆️ Levantar a cama","Levante a cabeceira da cama, por favor.",""],
+    ["🥵 Estou com calor","Estou com calor.",""],
+    ["🥶 Estou com frio","Estou com frio.",""],
+    ["🤢 Estou enjoado","Estou enjoado.",""],
+    ["🍽️ Estou com fome","Estou com fome.",""],
+    ["😴 Quero descansar","Quero descansar.",""],
+    ["🙂 Estou bem","Estou bem.","good"],
+    ["❓ Não entendi","Não entendi. Pode repetir?",""],
+    ["🐢 Fale devagar","Fale mais devagar, por favor.",""],
+    ["👨‍👩‍👧 Chame a família","Chame alguém da família, por favor.",""],
+    ["❤️ Obrigado","Obrigado.","good"],
+    ["✍️ Quero escrever","Me dê papel e caneta, por favor.",""],
+    ["🗣️ Quero dizer algo","Espere, quero dizer uma coisa.",""]
+  ];
+
+  var categories = {
+    "Início":["Eu","Estou","Quero","Preciso","Não quero","Não consigo","Posso","Pode","Sinto","Tenho","Está","Me dê","Por favor","Onde está","Quando"],
+    "Sinto":["dor","com dor","frio","calor","sede","fome","enjoo","coceira","tontura","falta de ar","cansado","com medo","ansioso","triste","bem","mal","melhor","pior","incomodado","com sono"],
+    "Ações":["beber","comer","dormir","descansar","sentar","levantar","deitar","virar","andar","ir","chamar","esperar","parar","ver","ouvir","tomar banho","escovar os dentes","ir embora"],
+    "Corpo":["na cabeça","na garganta","no peito","na barriga","nas costas","no braço","na mão","na perna","no pé","no pescoço","na boca","no olho","no ouvido","no corte","no curativo","no lado direito","no lado esquerdo"],
+    "Coisas":["água","comida","banheiro","remédio","travesseiro","cobertor","cadeira","cama","ajuda","silêncio","luz","celular","óculos","televisão","ar-condicionado","papel e caneta","roupa","lenço"],
+    "Pessoas":["médico","enfermagem","família","filho","filha","esposa","marido","irmão","irmã","neto","neta","fisioterapeuta","você","alguém"],
+    "Ligar":["e","com","sem","de","para","o","a","um","uma","mais","menos","muito","pouco","também","não","aqui","ali","isso"],
+    "Tempo":["agora","depois","mais tarde","já","ainda","hoje","amanhã","de noite","de manhã","rápido","devagar","de novo","a que horas?"],
+    "Respostas":["sim","não","talvez","não sei","certo","errado","igual","entendi","não entendi","obrigado","por favor","pare","continue","tudo bem","desculpe"]
+  };
+
+  /* ---------- frase ---------- */
+
+  function capitalize(s){ return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+
+  function currentText(){
+    if(!words.length) return "";
+    var t = capitalize(words.join(" "));
+    // Frase montada ganha ponto final ao ser mostrada/falada
+    if(!/[.!?]$/.test(t)) t += ".";
+    return t;
+  }
+
+  function render(){
+    if(words.length){
+      sentenceEl.textContent = locked ? words.join(" ") : capitalize(words.join(" "));
+      sentenceEl.classList.remove("empty");
+    }else{
+      sentenceEl.textContent = PLACEHOLDER;
+      sentenceEl.classList.add("empty");
+    }
+  }
+
+  function setSentence(text){
+    words = text ? [text] : [];
+    locked = !!text;
+    render();
+  }
+
+  function addWord(w){
+    if(locked){ words = []; locked = false; }
+    words.push(w);
+    render();
+  }
+
+  /* ---------- voz ---------- */
+
+  var voice = null;
+  function pickVoice(){
+    if(!("speechSynthesis" in window)) return;
+    var list = window.speechSynthesis.getVoices() || [];
+    voice = list.filter(function(v){ return /^pt[-_]BR/i.test(v.lang); })[0] ||
+            list.filter(function(v){ return /^pt/i.test(v.lang); })[0] || null;
+  }
+  if("speechSynthesis" in window){
+    pickVoice();
+    if("onvoiceschanged" in window.speechSynthesis) window.speechSynthesis.onvoiceschanged = pickVoice;
+  }
+
+  function speak(text){
+    text = text || currentText();
+    if(!text) return;
+    saveRecent(text);
+    if(!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)){
+      toast("Este celular não tem leitura em voz alta. Use “Grande”.");
+      return;
+    }
+    try{
+      window.speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = "pt-BR";
+      if(voice) u.voice = voice;
+      u.rate = 0.9;
+      u.volume = 1;
+      window.speechSynthesis.speak(u);
+    }catch(e){
+      toast("Não consegui ativar a voz. A frase continua na tela.");
+    }
+  }
+
+  /* ---------- tela grande ---------- */
+
+  function showBig(text, alertMode){
+    text = text || currentText();
+    if(!text) return;
+    saveRecent(text);
+    document.getElementById("overlayText").textContent = text;
+    overlay.classList.toggle("alertmode", !!alertMode);
+    overlay.classList.add("show");
+    overlay.dataset.text = text;
+  }
+  function closeBig(){ overlay.classList.remove("show"); }
+
+  /* ---------- últimas frases ---------- */
+
+  function loadRecent(){
+    try{ return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; }catch(e){ return []; }
+  }
+  function saveRecent(text){
+    var list = loadRecent().filter(function(t){ return t !== text; });
+    list.unshift(text);
+    list = list.slice(0, 8);
+    try{ localStorage.setItem(RECENT_KEY, JSON.stringify(list)); }catch(e){}
+    renderRecent(list);
+  }
+  function renderRecent(list){
+    list = list || loadRecent();
+    var box = document.getElementById("recentList");
+    box.innerHTML = "";
+    if(!list.length){
+      var p = document.createElement("p");
+      p.className = "empty-note";
+      p.textContent = "As frases faladas ou mostradas aparecem aqui.";
+      box.appendChild(p);
+      return;
+    }
+    list.forEach(function(t){
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = t;
+      b.addEventListener("click", function(){ setSentence(t); scrollTop(); });
+      box.appendChild(b);
+    });
+  }
+
+  /* ---------- utilidades ---------- */
+
+  var toastTimer;
+  function toast(msg){
+    var el = document.getElementById("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ el.classList.remove("show"); }, 2600);
+  }
+  function scrollTop(){ window.scrollTo({top:0, behavior:"smooth"}); }
+
+  /* ---------- montar a tela ---------- */
+
+  var activeTab = null;
+
+  function renderQuick(){
+    var grid = document.getElementById("quickGrid");
+    quick.forEach(function(item){
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "quick " + item[2];
+      b.textContent = item[0];
+      b.addEventListener("click", function(){
+        if(item[3]){
+          // Frase para completar: começa a montagem e abre a aba certa
+          words = [item[1]]; locked = false; render();
+          selectTab(item[3]);
+          document.getElementById("builder").scrollIntoView({behavior:"smooth", block:"center"});
+        }else{
+          setSentence(item[1]);
+        }
+      });
+      grid.appendChild(b);
+    });
+  }
+
+  function painColor(n){
+    // verde → amarelo → vermelho
+    var hue = Math.round(130 - n * 13);
+    return "hsl(" + hue + ",70%," + (n >= 4 && n <= 6 ? 40 : 38) + "%)";
+  }
+
+  function renderPain(){
+    var grid = document.getElementById("painGrid");
+    for(var i=0;i<=10;i++){
+      (function(n){
+        var b = document.createElement("button");
+        b.type = "button";
+        b.textContent = String(n);
+        b.style.background = painColor(n);
+        b.addEventListener("click", function(){
+          setSentence(n === 0 ? "Estou sem dor (0 de 10)." : "Minha dor está em " + n + " de 10.");
+          scrollTop();
+        });
+        grid.appendChild(b);
+      })(i);
+    }
+  }
+
+  function renderWords(name){
+    var area = document.getElementById("wordArea");
+    area.innerHTML = "";
+    categories[name].forEach(function(w){
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "word";
+      b.textContent = w;
+      b.addEventListener("click", function(){ addWord(w); });
+      area.appendChild(b);
+    });
+  }
+
+  function selectTab(name){
+    activeTab = name;
+    var all = document.querySelectorAll(".tab");
+    for(var i=0;i<all.length;i++) all[i].classList.toggle("active", all[i].dataset.name === name);
+    renderWords(name);
+  }
+
+  function renderTabs(){
+    var tabs = document.getElementById("tabs");
+    Object.keys(categories).forEach(function(name){
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "tab";
+      b.dataset.name = name;
+      b.textContent = name;
+      b.addEventListener("click", function(){ selectTab(name); });
+      tabs.appendChild(b);
+    });
+    selectTab(Object.keys(categories)[0]);
+  }
+
+  /* ---------- eventos ---------- */
+
+  document.getElementById("btnSpeak").addEventListener("click", function(){ speak(); });
+  document.getElementById("btnBig").addEventListener("click", function(){ showBig(); });
+  document.getElementById("btnBack").addEventListener("click", function(){
+    if(locked){ words = []; locked = false; } else { words.pop(); }
+    render();
+  });
+  document.getElementById("btnClear").addEventListener("click", function(){ setSentence(""); });
+
+  document.getElementById("btnOverlaySpeak").addEventListener("click", function(e){
+    e.stopPropagation();
+    speak(overlay.dataset.text);
+  });
+  document.getElementById("btnCloseOverlay").addEventListener("click", closeBig);
+  overlay.addEventListener("click", function(e){ if(e.target === overlay || e.target.id === "overlayText") closeBig(); });
+
+  function useCustom(){
+    var inp = document.getElementById("customText");
+    var t = inp.value.trim();
+    if(t){ setSentence(t); inp.value = ""; inp.blur(); scrollTop(); }
+  }
+  document.getElementById("btnUse").addEventListener("click", useCustom);
+  document.getElementById("customText").addEventListener("keydown", function(e){
+    if(e.key === "Enter"){ e.preventDefault(); useCustom(); }
+  });
+
+  var fixed = document.querySelectorAll("[data-fixed]");
+  for(var i=0;i<fixed.length;i++){
+    fixed[i].addEventListener("click", function(){
+      var t = this.getAttribute("data-fixed");
+      setSentence(t);
+      // Botões fixos já mostram em tela cheia e falam, para ser imediato
+      showBig(t, this.hasAttribute("data-alert"));
+      speak(t);
+    });
+  }
+
+  renderQuick();
+  renderPain();
+  renderTabs();
+  renderRecent();
+
+  if("serviceWorker" in navigator && location.protocol.indexOf("http") === 0){
+    navigator.serviceWorker.register("sw.js").catch(function(){});
+  }
+})();
+</script>
+</body>
+</html>
