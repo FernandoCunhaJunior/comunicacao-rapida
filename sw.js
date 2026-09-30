@@ -1,9 +1,17 @@
 // Cache para o app abrir mesmo sem internet (ex.: hospital com sinal fraco)
-var CACHE = "comunicacao-v2";
-var FILES = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png"];
+var CACHE = "comunicacao-v3";
+var FILES = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png", "audio/frases.json"];
 
 self.addEventListener("install", function(e){
-  e.waitUntil(caches.open(CACHE).then(function(c){ return c.addAll(FILES); }));
+  e.waitUntil(caches.open(CACHE).then(function(c){
+    return c.addAll(FILES).then(function(){
+      // Guarda também todos os áudios das frases prontas
+      return fetch("audio/frases.json").then(function(r){ return r.json(); }).then(function(map){
+        var urls = Object.keys(map).map(function(k){ return map[k]; });
+        return c.addAll(urls.filter(function(u, i){ return urls.indexOf(u) === i; }));
+      });
+    });
+  }));
   self.skipWaiting();
 });
 
@@ -14,9 +22,20 @@ self.addEventListener("activate", function(e){
   self.clients.claim();
 });
 
-// Rede primeiro (pega atualizações), cache se estiver sem internet
+// Áudios: cache primeiro (não mudam). Resto: rede primeiro (pega atualizações), cache se estiver sem internet
 self.addEventListener("fetch", function(e){
   if(e.request.method !== "GET") return;
+  var isAudio = /\/audio\/[^/]+\.mp3$/.test(new URL(e.request.url).pathname);
+  if(isAudio){
+    e.respondWith(caches.match(e.request).then(function(r){
+      return r || fetch(e.request).then(function(res){
+        var copy = res.clone();
+        caches.open(CACHE).then(function(c){ c.put(e.request, copy); });
+        return res;
+      });
+    }));
+    return;
+  }
   e.respondWith(
     fetch(e.request).then(function(res){
       var copy = res.clone();

@@ -79,6 +79,7 @@ main{max-width:900px;margin:auto;padding:12px}
 .pain-legend{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:6px}
 
 .custom{display:grid;grid-template-columns:1fr auto;gap:8px}
+.custom select{min-width:0;height:54px;border-radius:14px;border:1px solid #cfd8e7;padding:0 10px;font-size:16px;background:#fff;color:var(--ink)}
 .custom input{min-width:0;height:54px;border-radius:14px;border:1px solid #cfd8e7;padding:0 12px;font-size:18px;background:#fff}
 .custom button{border:0;border-radius:14px;background:var(--blue);color:#fff;font-weight:900;padding:0 18px}
 
@@ -163,6 +164,15 @@ main{max-width:900px;margin:auto;padding:12px}
     <div class="custom">
       <input id="customText" type="text" inputmode="text" enterkeyhint="done" placeholder="Digite aqui..." autocomplete="off" autocapitalize="sentences">
       <button type="button" id="btnUse">Usar</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-head"><h2>⚙️ Voz das frases montadas</h2></div>
+    <p class="empty-note" style="margin-bottom:8px">As frases prontas já usam voz gravada. Para frases montadas ou digitadas, escolha a voz do celular que soa mais natural.</p>
+    <div class="custom">
+      <select id="voiceSelect" aria-label="Voz do celular"></select>
+      <button type="button" id="btnTestVoice">Testar</button>
     </div>
   </section>
 </main>
@@ -271,37 +281,127 @@ main{max-width:900px;margin:auto;padding:12px}
 
   /* ---------- voz ---------- */
 
-  var voice = null;
-  function pickVoice(){
+  // 1) Frases prontas: áudio gravado com voz neural (audio/frases.json), tocado com reforço de volume.
+  // 2) Frases montadas/digitadas: voz do próprio celular, escolhendo a mais natural disponível.
+
+  var VOICE_KEY = "comunicacao.voz";
+  var clips = {}, buffers = {}, currentSrc = null, audioCtx = null, master = null;
+
+  fetch("audio/frases.json").then(function(r){ return r.json(); }).then(function(m){ clips = m; }).catch(function(){});
+
+  function getCtx(){
+    try{
+      // iOS: toca mesmo com o celular no modo silencioso (quando suportado)
+      if(navigator.audioSession) navigator.audioSession.type = "playback";
+      if(!audioCtx){
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        // Ganho + compressor/limitador: deixa a voz bem mais alta sem estourar
+        var gain = audioCtx.createGain();
+        gain.gain.value = 2.5;
+        var comp = audioCtx.createDynamicsCompressor();
+        comp.threshold.value = -24; comp.knee.value = 6; comp.ratio.value = 12;
+        comp.attack.value = 0.003; comp.release.value = 0.15;
+        gain.connect(comp); comp.connect(audioCtx.destination);
+        master = gain;
+      }
+      if(audioCtx.state === "suspended") audioCtx.resume();
+      return audioCtx;
+    }catch(e){ return null; }
+  }
+
+  function loadBuffer(ctx, url){
+    if(buffers[url]) return Promise.resolve(buffers[url]);
+    return fetch(url).then(function(r){
+      if(!r.ok) throw new Error("audio");
+      return r.arrayBuffer();
+    }).then(function(data){
+      // forma com callbacks: funciona também em Safari antigo
+      return new Promise(function(ok, fail){ ctx.decodeAudioData(data, ok, fail); });
+    }).then(function(buf){ buffers[url] = buf; return buf; });
+  }
+
+  function stopVoice(){
+    if(currentSrc){ try{ currentSrc.stop(); }catch(e){} currentSrc = null; }
+    if("speechSynthesis" in window) window.speechSynthesis.cancel();
+  }
+
+  var systemVoices = [], voice = null;
+  function voiceScore(v){
+    var s = 0;
+    if(/^pt[-_]BR/i.test(v.lang)) s += 20; else if(/^pt/i.test(v.lang)) s += 10;
+    if(/natural|neural|premium|enhanced|aprimorad|online/i.test(v.name)) s += 8;
+    if(/google/i.test(v.name)) s += 4;
+    if(v.localService === false) s += 2;
+    return s;
+  }
+  function loadVoices(){
     if(!("speechSynthesis" in window)) return;
-    var list = window.speechSynthesis.getVoices() || [];
-    voice = list.filter(function(v){ return /^pt[-_]BR/i.test(v.lang); })[0] ||
-            list.filter(function(v){ return /^pt/i.test(v.lang); })[0] || null;
+    systemVoices = (window.speechSynthesis.getVoices() || [])
+      .filter(function(v){ return /^pt/i.test(v.lang); })
+      .sort(function(a, b){ return voiceScore(b) - voiceScore(a); });
+    var saved = null;
+    try{ saved = localStorage.getItem(VOICE_KEY); }catch(e){}
+    voice = systemVoices.filter(function(v){ return v.voiceURI === saved; })[0] || systemVoices[0] || null;
+    renderVoicePicker();
   }
   if("speechSynthesis" in window){
-    pickVoice();
-    if("onvoiceschanged" in window.speechSynthesis) window.speechSynthesis.onvoiceschanged = pickVoice;
+    loadVoices();
+    if("onvoiceschanged" in window.speechSynthesis) window.speechSynthesis.onvoiceschanged = loadVoices;
+  }
+
+  function speakSystem(text){
+    if(!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)){
+      toast("Este celular não tem leitura em voz alta. Use “Grande”.");
+      return;
+    }
+    try{
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = "pt-BR";
+      if(voice) u.voice = voice;
+      u.rate = 0.95;
+      u.pitch = 1;
+      u.volume = 1;
+      window.speechSynthesis.speak(u);
+    }catch(e){
+      toast("Não consegui ativar a voz. A frase continua na tela.");
+    }
   }
 
   function speak(text){
     text = text || currentText();
     if(!text) return;
     saveRecent(text);
-    if(!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)){
-      toast("Este celular não tem leitura em voz alta. Use “Grande”.");
+    stopVoice();
+    var url = clips[text], ctx = url && getCtx();
+    if(!ctx){ speakSystem(text); return; }
+    loadBuffer(ctx, url).then(function(buf){
+      stopVoice();
+      var src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(master);
+      src.start();
+      currentSrc = src;
+    }).catch(function(){ speakSystem(text); });
+  }
+
+  function renderVoicePicker(){
+    var sel = document.getElementById("voiceSelect");
+    if(!sel) return;
+    sel.innerHTML = "";
+    if(!systemVoices.length){
+      var o = document.createElement("option");
+      o.textContent = "Nenhuma voz em português encontrada";
+      sel.appendChild(o); sel.disabled = true;
       return;
     }
-    try{
-      window.speechSynthesis.cancel();
-      var u = new SpeechSynthesisUtterance(text);
-      u.lang = "pt-BR";
-      if(voice) u.voice = voice;
-      u.rate = 0.9;
-      u.volume = 1;
-      window.speechSynthesis.speak(u);
-    }catch(e){
-      toast("Não consegui ativar a voz. A frase continua na tela.");
-    }
+    sel.disabled = false;
+    systemVoices.forEach(function(v){
+      var o = document.createElement("option");
+      o.value = v.voiceURI;
+      o.textContent = v.name + (v.localService === false ? " (online)" : "");
+      if(voice && v.voiceURI === voice.voiceURI) o.selected = true;
+      sel.appendChild(o);
+    });
   }
 
   /* ---------- tela grande ---------- */
@@ -319,7 +419,7 @@ main{max-width:900px;margin:auto;padding:12px}
 
   /* ---------- sirene do botão AJUDA ---------- */
 
-  var audioCtx = null, siren = null, alarmTimers = [];
+  var siren = null, alarmTimers = [];
   var SIREN_MS = 4000, PAUSE_MS = 3500, ALARM_MAX_MS = 60000;
 
   function sirenOn(){
@@ -354,12 +454,7 @@ main{max-width:900px;margin:auto;padding:12px}
   // Ciclo: sirene → fala a frase → sirene… até alguém tocar em "Fechar" (ou 1 minuto)
   function startAlarm(text){
     stopAlarm();
-    try{
-      // iOS: toca mesmo com o celular no modo silencioso (quando suportado)
-      if(navigator.audioSession) navigator.audioSession.type = "playback";
-      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-      if(audioCtx.state === "suspended") audioCtx.resume();
-    }catch(e){ audioCtx = null; }
+    getCtx();
 
     var started = Date.now();
     function cycle(){
@@ -379,7 +474,7 @@ main{max-width:900px;margin:auto;padding:12px}
     alarmTimers.forEach(clearTimeout); alarmTimers = [];
     sirenOff();
     if(navigator.vibrate) navigator.vibrate(0);
-    if("speechSynthesis" in window) window.speechSynthesis.cancel();
+    stopVoice();
   }
 
   /* ---------- últimas frases ---------- */
@@ -532,6 +627,16 @@ main{max-width:900px;margin:auto;padding:12px}
     if(t){ setSentence(t); inp.value = ""; inp.blur(); scrollTop(); }
   }
   document.getElementById("btnUse").addEventListener("click", useCustom);
+
+  document.getElementById("voiceSelect").addEventListener("change", function(){
+    var uri = this.value;
+    voice = systemVoices.filter(function(v){ return v.voiceURI === uri; })[0] || voice;
+    try{ localStorage.setItem(VOICE_KEY, uri); }catch(e){}
+  });
+  document.getElementById("btnTestVoice").addEventListener("click", function(){
+    stopVoice();
+    speakSystem("Olá, esta é a voz para as frases que eu montar.");
+  });
   document.getElementById("customText").addEventListener("keydown", function(e){
     if(e.key === "Enter"){ e.preventDefault(); useCustom(); }
   });

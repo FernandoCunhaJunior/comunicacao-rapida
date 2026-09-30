@@ -15,3 +15,14 @@ Abra o link do GitHub Pages no celular e:
 
 - **iPhone (Safari):** Compartilhar → *Adicionar à Tela de Início*
 - **Android (Chrome):** menu ⋮ → *Adicionar à tela inicial* / *Instalar app*
+
+## Voz
+
+As frases prontas usam áudios gravados com voz neural (`audio/`). Depois de mudar ou acrescentar frases no `index.html`, gere os áudios de novo:
+
+```
+pip install edge-tts
+python tools/gerar_audios.py
+```
+
+Frases montadas palavra por palavra ou digitadas usam a voz do próprio celular (dá para escolher a voz no fim da página).
