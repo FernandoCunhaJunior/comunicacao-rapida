@@ -1,5 +1,5 @@
 // Cache para o app abrir mesmo sem internet (ex.: hospital com sinal fraco)
-var CACHE = "comunicacao-v1";
+var CACHE = "comunicacao-v2";
 var FILES = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", function(e){

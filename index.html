@@ -102,7 +102,8 @@ main{max-width:900px;margin:auto;padding:12px}
 .overlay-actions button{border:0;border-radius:14px;padding:16px 22px;font-weight:900;font-size:18px}
 #btnOverlaySpeak{background:var(--blue);color:#fff}
 #btnCloseOverlay{background:#fff;color:#172033}
-#overlay.alertmode{background:#b91c1c}
+#overlay.alertmode{background:#b91c1c;animation:pisca .5s steps(1) infinite}
+@keyframes pisca{50%{background:#7f1d1d}}
 
 #toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#1e293b;color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;font-weight:700;opacity:0;pointer-events:none;transition:opacity .2s;z-index:1000;max-width:90vw;text-align:center}
 #toast.show{opacity:1}
@@ -314,7 +315,72 @@ main{max-width:900px;margin:auto;padding:12px}
     overlay.classList.add("show");
     overlay.dataset.text = text;
   }
-  function closeBig(){ overlay.classList.remove("show"); }
+  function closeBig(){ overlay.classList.remove("show"); stopAlarm(); }
+
+  /* ---------- sirene do botão AJUDA ---------- */
+
+  var audioCtx = null, siren = null, alarmTimers = [];
+  var SIREN_MS = 4000, PAUSE_MS = 3500, ALARM_MAX_MS = 60000;
+
+  function sirenOn(){
+    if(siren) return;
+    var osc = audioCtx.createOscillator();
+    var lfo = audioCtx.createOscillator();
+    var lfoGain = audioCtx.createGain();
+    var vol = audioCtx.createGain();
+    // Tom que sobe e desce (tipo ambulância): LFO modula a frequência entre ~600 e ~1400 Hz
+    osc.type = "sawtooth";
+    osc.frequency.value = 1000;
+    lfo.type = "triangle";
+    lfo.frequency.value = 0.9;
+    lfoGain.gain.value = 400;
+    lfo.connect(lfoGain); lfoGain.connect(osc.frequency);
+    vol.gain.value = 0.0001;
+    vol.gain.exponentialRampToValueAtTime(0.8, audioCtx.currentTime + 0.05);
+    osc.connect(vol); vol.connect(audioCtx.destination);
+    osc.start(); lfo.start();
+    siren = {osc:osc, lfo:lfo, vol:vol};
+  }
+
+  function sirenOff(){
+    if(!siren) return;
+    var s = siren; siren = null;
+    try{
+      s.vol.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 0.03);
+      s.osc.stop(audioCtx.currentTime + 0.2); s.lfo.stop(audioCtx.currentTime + 0.2);
+    }catch(e){}
+  }
+
+  // Ciclo: sirene → fala a frase → sirene… até alguém tocar em "Fechar" (ou 1 minuto)
+  function startAlarm(text){
+    stopAlarm();
+    try{
+      // iOS: toca mesmo com o celular no modo silencioso (quando suportado)
+      if(navigator.audioSession) navigator.audioSession.type = "playback";
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if(audioCtx.state === "suspended") audioCtx.resume();
+    }catch(e){ audioCtx = null; }
+
+    var started = Date.now();
+    function cycle(){
+      if(Date.now() - started > ALARM_MAX_MS){ stopAlarm(); return; }
+      if(navigator.vibrate) navigator.vibrate([400,200,400,200,400]);
+      if(audioCtx) sirenOn();
+      alarmTimers.push(setTimeout(function(){
+        sirenOff();
+        speak(text);
+        alarmTimers.push(setTimeout(cycle, PAUSE_MS));
+      }, audioCtx ? SIREN_MS : 0));
+    }
+    cycle();
+  }
+
+  function stopAlarm(){
+    alarmTimers.forEach(clearTimeout); alarmTimers = [];
+    sirenOff();
+    if(navigator.vibrate) navigator.vibrate(0);
+    if("speechSynthesis" in window) window.speechSynthesis.cancel();
+  }
 
   /* ---------- últimas frases ---------- */
 
@@ -454,6 +520,7 @@ main{max-width:900px;margin:auto;padding:12px}
 
   document.getElementById("btnOverlaySpeak").addEventListener("click", function(e){
     e.stopPropagation();
+    stopAlarm();
     speak(overlay.dataset.text);
   });
   document.getElementById("btnCloseOverlay").addEventListener("click", closeBig);
@@ -475,8 +542,9 @@ main{max-width:900px;margin:auto;padding:12px}
       var t = this.getAttribute("data-fixed");
       setSentence(t);
       // Botões fixos já mostram em tela cheia e falam, para ser imediato
-      showBig(t, this.hasAttribute("data-alert"));
-      speak(t);
+      var isAlert = this.hasAttribute("data-alert");
+      showBig(t, isAlert);
+      if(isAlert) startAlarm(t); else speak(t);
     });
   }
 
