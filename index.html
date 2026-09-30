@@ -319,10 +319,13 @@ main{max-width:900px;margin:auto;padding:12px}
     })();
   }
 
+  var lastAudioError = "";
+
   function getCtx(){
+    // iOS: toca mesmo com o celular no modo silencioso (quando suportado).
+    // Em try separado: se falhar, não pode impedir o resto do áudio.
+    try{ if(navigator.audioSession) navigator.audioSession.type = "playback"; }catch(e){}
     try{
-      // iOS: toca mesmo com o celular no modo silencioso (quando suportado)
-      if(navigator.audioSession) navigator.audioSession.type = "playback";
       if(!audioCtx){
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         // Ganho + compressor/limitador: deixa a voz bem mais alta sem estourar
@@ -334,9 +337,12 @@ main{max-width:900px;margin:auto;padding:12px}
         gain.connect(comp); comp.connect(audioCtx.destination);
         master = gain;
       }
-      if(audioCtx.state === "suspended") audioCtx.resume();
+      if(audioCtx.state === "suspended"){
+        var p = audioCtx.resume();
+        if(p && p.catch) p.catch(function(){});
+      }
       return audioCtx;
-    }catch(e){ return null; }
+    }catch(e){ lastAudioError = "AudioContext: " + (e.name || e.message); return null; }
   }
 
   function loadBuffer(ctx, url){
@@ -350,9 +356,32 @@ main{max-width:900px;margin:auto;padding:12px}
     }).then(function(buf){ buffers[url] = buf; return buf; });
   }
 
+  // Segunda forma de tocar as gravações (elemento <audio>), caso o Web Audio falhe no aparelho
+  var player = null;
+  function playElements(urls, text){
+    player = player || new Audio();
+    var i = 0;
+    function fail(e){
+      player.onended = player.onerror = null;
+      toast("Voz gravada não tocou (" + lastAudioError + (e ? "; " + (e.name || e.type || e) : "") + "). Usando a voz do celular.");
+      speakSystem(text);
+    }
+    function next(){
+      if(i >= urls.length){ player.onended = player.onerror = null; return; }
+      player.src = urls[i++];
+      player.volume = 1;
+      var p = player.play();
+      if(p && p.catch) p.catch(fail);
+    }
+    player.onended = next;
+    player.onerror = fail;
+    next();
+  }
+
   function stopVoice(){
     currentSrcs.forEach(function(s){ try{ s.stop(); }catch(e){} });
     currentSrcs = [];
+    if(player){ player.onended = player.onerror = null; try{ player.pause(); }catch(e){} }
     if("speechSynthesis" in window) window.speechSynthesis.cancel();
   }
 
@@ -462,9 +491,18 @@ main{max-width:900px;margin:auto;padding:12px}
     if(!text) return;
     saveRecent(text, tokens);
     stopVoice();
-    var urls = clipsFor(text, tokens), ctx = urls && getCtx();
-    if(!ctx){ speakSystem(text); return; }
-    playClips(ctx, urls).catch(function(){ speakSystem(text); });
+    var urls = clipsFor(text, tokens);
+    if(!urls){   // alguma palavra não tem gravação
+      if(!Object.keys(vozes).length) toast("As vozes gravadas ainda não carregaram. Usando a voz do celular.");
+      speakSystem(text);
+      return;
+    }
+    var ctx = getCtx();
+    if(!ctx){ playElements(urls, text); return; }
+    playClips(ctx, urls).catch(function(e){
+      lastAudioError = "Web Audio: " + (e && (e.name || e.message) || "erro");
+      playElements(urls, text);
+    });
   }
 
   function renderVoicePicker(){
