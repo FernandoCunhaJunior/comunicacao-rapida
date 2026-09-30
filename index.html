@@ -285,33 +285,45 @@ main{max-width:900px;margin:auto;padding:12px}
 
   /* ---------- voz ---------- */
 
-  // Vozes gravadas (neural, iguais em qualquer celular): audio/vozes.json
+  // Vozes gravadas (neural, iguais em qualquer celular): índice em audio/vozes.json,
+  // áudio em audio/<voz>/<hash>.mp3
   // 1) Frase pronta → gravação da frase inteira.
-  // 2) Frase montada ou digitada → junta as gravações de cada palavra.
+  // 2) Frase montada ou digitada → junta as gravações de cada palavra
+  //    (botões + vocabulário grande com as ~3.500 palavras mais usadas e termos de saúde).
   // 3) Só se faltar alguma palavra → voz do próprio celular (apenas vozes do Brasil).
 
   var VOICE_KEY = "comunicacao.vozGravada";
-  var vozes = {}, buffers = {}, currentSrcs = [], audioCtx = null, master = null;
+  var idx = {vozes:{}, frases:{}, palavras:{}, extras:{}}, semAcento = {};
+  var buffers = {}, currentSrcs = [], audioCtx = null, master = null;
   var WORD_GAP = 0.06; // pausa (s) entre palavras juntadas
 
   function voiceId(){
     var id = null;
     try{ id = localStorage.getItem(VOICE_KEY); }catch(e){}
-    return vozes[id] ? id : "antonio";
+    return idx.vozes[id] ? id : "antonio";
   }
-  function voz(){ return vozes[voiceId()] || {frases:{}, palavras:{}}; }
+  function audioUrl(hash){ return "audio/" + voiceId() + "/" + hash + ".mp3"; }
+  function wordHash(w){ return idx.palavras[w] || idx.extras[w]; }
+  function stripAccents(s){ return s.normalize ? s.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : s; }
 
   fetch("audio/vozes.json").then(function(r){ return r.json(); }).then(function(m){
-    vozes = m;
+    idx = m;
+    // "agua" digitado sem acento → "água"
+    [idx.palavras, idx.extras].forEach(function(d){
+      Object.keys(d).forEach(function(w){ var k = stripAccents(w); if(!(k in semAcento)) semAcento[k] = w; });
+    });
     renderVoicePicker();
     setTimeout(function(){ prefetchVoice(voiceId()); }, 3000);
   }).catch(function(){});
 
-  // Baixa todos os áudios da voz escolhida para funcionar sem internet
+  // Baixa os áudios das frases e botões da voz escolhida para funcionar sem internet
+  // (palavras do vocabulário grande são baixadas na primeira vez que forem usadas)
   function prefetchVoice(id){
-    var v = vozes[id]; if(!v) return;
+    if(!idx.vozes[id]) return;
     var urls = [];
-    [v.frases, v.palavras].forEach(function(m){ Object.keys(m).forEach(function(k){ if(urls.indexOf(m[k]) < 0) urls.push(m[k]); }); });
+    [idx.frases, idx.palavras].forEach(function(m){
+      Object.keys(m).forEach(function(k){ var u = "audio/" + id + "/" + m[k] + ".mp3"; if(urls.indexOf(u) < 0) urls.push(u); });
+    });
     (function next(){
       var batch = urls.splice(0, 6);
       if(!batch.length) return;
@@ -456,32 +468,38 @@ main{max-width:900px;margin:auto;padding:12px}
 
   function norm(s){ return s.toLowerCase().replace(/[.,;:!?…"“”()]/g, " ").replace(/\s+/g, " ").trim(); }
 
-  // Texto digitado → palavras gravadas, pegando primeiro as expressões mais longas ("não quero", "na cabeça")
-  function tokenizeTyped(text){
-    var dict = voz().palavras, parts = norm(text).split(" "), out = [], i = 0;
-    if(!parts[0]) return null;
+  function findWord(w){
+    if(wordHash(w)) return w;
+    var k = semAcento[stripAccents(w)];
+    return k || null;
+  }
+
+  // Texto → palavras gravadas, pegando primeiro as expressões mais longas ("não quero", "na cabeça").
+  // Devolve {words: [...], missing: [...]}
+  function tokenize(text){
+    var parts = norm(text).split(" "), out = [], missing = [], i = 0;
+    if(!parts[0]) return {words: [], missing: []};
     while(i < parts.length){
-      var found = 0;
+      var found = 0, w = null;
       for(var len = Math.min(4, parts.length - i); len > 0; len--){
-        if(dict[parts.slice(i, i + len).join(" ")]){ found = len; break; }
+        w = findWord(parts.slice(i, i + len).join(" "));
+        if(w){ found = len; break; }
       }
-      if(!found) return null;
-      out.push(parts.slice(i, i + found).join(" "));
+      if(!found){ missing.push(parts[i]); i++; continue; }
+      out.push(w);
       i += found;
     }
-    return out;
+    return {words: out, missing: missing};
   }
 
   // Áudios para o texto: frase inteira gravada, ou uma gravação por palavra
   function clipsFor(text, tokens){
-    var v = voz();
-    if(v.frases[text]) return [v.frases[text]];
+    if(idx.frases[text]) return {urls: [audioUrl(idx.frases[text])], missing: []};
     var key = norm(text);
-    for(var f in v.frases){ if(norm(f) === key) return [v.frases[f]]; }
-    tokens = tokens && tokens.length ? tokens : tokenizeTyped(text);
-    if(!tokens) return null;
-    var urls = tokens.map(function(w){ return v.palavras[w.toLowerCase()]; });
-    return urls.every(Boolean) ? urls : null;
+    for(var f in idx.frases){ if(norm(f) === key) return {urls: [audioUrl(idx.frases[f])], missing: []}; }
+    var t = tokenize(tokens && tokens.length ? tokens.join(" ") : text);
+    if(!t.words.length && !t.missing.length) return null;
+    return {urls: t.words.map(function(w){ return audioUrl(wordHash(w)); }), missing: t.missing};
   }
 
   function currentTokens(){ return (!locked && words.length) ? words.slice() : null; }
@@ -491,12 +509,14 @@ main{max-width:900px;margin:auto;padding:12px}
     if(!text) return;
     saveRecent(text, tokens);
     stopVoice();
-    var urls = clipsFor(text, tokens);
-    if(!urls){   // alguma palavra não tem gravação
-      if(!Object.keys(vozes).length) toast("As vozes gravadas ainda não carregaram. Usando a voz do celular.");
+    var c = clipsFor(text, tokens);
+    if(!c || c.missing.length){   // alguma palavra não tem gravação
+      if(!Object.keys(idx.vozes).length) toast("As vozes gravadas ainda não carregaram. Usando a voz do celular.");
+      else if(c) toast("Sem voz gravada para: " + c.missing.join(", ") + ". Usando a voz do celular.");
       speakSystem(text);
       return;
     }
+    var urls = c.urls;
     var ctx = getCtx();
     if(!ctx){ playElements(urls, text); return; }
     playClips(ctx, urls).catch(function(e){
@@ -509,10 +529,10 @@ main{max-width:900px;margin:auto;padding:12px}
     var sel = document.getElementById("voiceSelect");
     sel.innerHTML = "";
     var current = voiceId();
-    Object.keys(vozes).forEach(function(id){
+    Object.keys(idx.vozes).forEach(function(id){
       var o = document.createElement("option");
       o.value = id;
-      o.textContent = vozes[id].nome;
+      o.textContent = idx.vozes[id];
       if(id === current) o.selected = true;
       sel.appendChild(o);
     });
@@ -752,9 +772,9 @@ main{max-width:900px;margin:auto;padding:12px}
   document.getElementById("voiceSelect").addEventListener("change", function(){
     try{ localStorage.setItem(VOICE_KEY, this.value); }catch(e){}
     prefetchVoice(this.value);
-    speak(voz().teste);
+    speak(idx.teste);
   });
-  document.getElementById("btnTestVoice").addEventListener("click", function(){ speak(voz().teste); });
+  document.getElementById("btnTestVoice").addEventListener("click", function(){ speak(idx.teste); });
   document.getElementById("customText").addEventListener("keydown", function(e){
     if(e.key === "Enter"){ e.preventDefault(); useCustom(); }
   });

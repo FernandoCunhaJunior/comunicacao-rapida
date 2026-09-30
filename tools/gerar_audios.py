@@ -1,11 +1,15 @@
-"""Gera os áudios (voz neural) das frases prontas e das palavras do index.html.
+"""Gera os áudios (voz neural) das frases prontas e do vocabulário.
 
 Uso:  pip install edge-tts
       python tools/gerar_audios.py
 
 Cria audio/<voz>/<hash>.mp3 e audio/vozes.json:
-  {"antonio": {"nome": ..., "frases": {"texto": "audio/antonio/x.mp3"}, "palavras": {...}}, ...}
-Rode de novo sempre que mudar/acrescentar frases ou palavras no index.html.
+  {"vozes": {"antonio": "Antonio (masculina)", ...}, "teste": "...",
+   "frases": {"texto": "hash"},                    # frases prontas (gravação inteira)
+   "palavras": {"palavra": "hash"},                # botões de "Montar frase" (baixadas p/ uso offline)
+   "extras": {"palavra": "hash"}}                  # vocabulário grande (baixado quando usado)
+O áudio fica em audio/<voz>/<hash>.mp3.
+Rode de novo sempre que mudar frases/palavras no index.html ou nas listas de tools/.
 """
 import asyncio, hashlib, json, pathlib, re
 
@@ -18,13 +22,16 @@ VOZES = {
 RATE = "-8%"                   # um pouco mais devagar, mais claro
 VOLUME = "+30%"
 TESTE = "Olá, esta é a minha voz."
+PARALELO = 6
 
-# Palavras muito curtas que, sozinhas, a voz leria como letra ("o" → "ó").
-# Aqui vai como deve SOAR.
-PRONUNCIA = {"e": "i", "o": "u", "de": "di"}
+# Palavras curtas que, sozinhas, a voz leria "tônicas" ou como letra ("o" → "ó").
+# Aqui vai como devem SOAR dentro de uma frase.
+PRONUNCIA = {"e": "i", "o": "u", "os": "us", "de": "di", "do": "du", "dos": "dus",
+             "no": "nu", "nos": "nus", "se": "si", "te": "tchi", "me": "mi", "lhe": "lhi", "que": "qui"}
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "audio"
+TOOLS = ROOT / "tools"
 html = (ROOT / "index.html").read_text(encoding="utf-8")
 
 
@@ -56,32 +63,68 @@ def palavras():
     return list(dict.fromkeys(p.lower() for p in lista))
 
 
-async def gerar(pasta, voz, texto, sufixo=""):
-    nome = hashlib.md5((texto + sufixo).encode("utf-8")).hexdigest()[:10] + ".mp3"
-    destino = OUT / pasta / nome
-    if not destino.exists():
-        await edge_tts.Communicate(texto, voz, rate=RATE, volume=VOLUME).save(str(destino))
-        print(pasta, "gerado:", texto)
-    return f"audio/{pasta}/{nome}"
+def lista_arquivo(nome):
+    linhas = (TOOLS / nome).read_text(encoding="utf-8").splitlines()
+    return [l.strip().lower() for l in linhas if l.strip() and not l.startswith("#")]
+
+
+def extras(ja):
+    """Vocabulário grande para o texto digitado: saúde + mais frequentes + números."""
+    lista = lista_arquivo("vocabulario_saude.txt") + lista_arquivo("frequentes.txt")
+    lista += [str(n) for n in range(0, 101)]
+    return [p for p in dict.fromkeys(lista) if p not in ja]
+
+
+def chave(texto):
+    return hashlib.md5(texto.encode("utf-8")).hexdigest()[:10]
 
 
 async def main():
-    indice = {}
-    usados = set()
-    for pasta, (nome, voz) in VOZES.items():
+    fr = {t: chave(t) for t in frases()}
+    pa = {p: chave(PRONUNCIA.get(p, p) + "|palavra") for p in palavras()}
+    ex = {p: chave(PRONUNCIA.get(p, p) + "|palavra") for p in extras(set(pa))}
+
+    # hash → texto a falar
+    falar = {h: t for t, h in fr.items()}
+    falar.update({h: PRONUNCIA.get(p, p) for p, h in list(pa.items()) + list(ex.items())})
+
+    sem = asyncio.Semaphore(PARALELO)
+    feitos = 0
+
+    async def gerar(pasta, voz, h, texto):
+        nonlocal feitos
+        destino = OUT / pasta / (h + ".mp3")
+        if destino.exists():
+            return
+        async with sem:
+            for tentativa in range(4):
+                try:
+                    await edge_tts.Communicate(texto, voz, rate=RATE, volume=VOLUME).save(str(destino))
+                    break
+                except Exception as e:
+                    destino.unlink(missing_ok=True)
+                    if tentativa == 3:
+                        print("FALHOU:", pasta, texto, e)
+                    await asyncio.sleep(2 * (tentativa + 1))
+        feitos += 1
+        if feitos % 200 == 0:
+            print(feitos, "gerados...", flush=True)
+
+    for pasta, (_, voz) in VOZES.items():
         (OUT / pasta).mkdir(parents=True, exist_ok=True)
-        fr = {t: await gerar(pasta, voz, t) for t in frases()}
-        pa = {p: await gerar(pasta, voz, PRONUNCIA.get(p, p), "|palavra") for p in palavras()}
-        indice[pasta] = {"nome": nome, "teste": TESTE, "frases": fr, "palavras": pa}
-        usados |= {str(ROOT / u) for u in list(fr.values()) + list(pa.values())}
-    # remove áudios que não são mais usados (inclui versões antigas soltas em audio/)
+        await asyncio.gather(*(gerar(pasta, voz, h, t) for h, t in falar.items()))
+
+    # remove áudios que não são mais usados (e arquivos antigos)
     for f in OUT.rglob("*.mp3"):
-        if str(f) not in {str(pathlib.Path(u)) for u in usados}:
+        if f.parent.name not in VOZES or f.stem not in falar:
             f.unlink()
     for antigo in ("frases.json", "palavras.json"):
         (OUT / antigo).unlink(missing_ok=True)
-    (OUT / "vozes.json").write_text(json.dumps(indice, ensure_ascii=False, indent=1), encoding="utf-8")
-    print({k: (len(v["frases"]), len(v["palavras"])) for k, v in indice.items()})
+
+    indice = {"vozes": {k: v[0] for k, v in VOZES.items()}, "teste": TESTE,
+              "frases": fr, "palavras": pa, "extras": ex}
+    (OUT / "vozes.json").write_text(json.dumps(indice, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    print(len(fr), "frases,", len(pa), "palavras dos botões,", len(ex), "palavras extras")
 
 
 asyncio.run(main())

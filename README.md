@@ -18,11 +18,13 @@ Abra o link do GitHub Pages no celular e:
 
 ## Voz
 
-Duas vozes gravadas (neural, iguais em qualquer celular): **Antonio** e **Francisca** — escolha no fim da página.
-Frases prontas usam a gravação inteira; frases montadas ou digitadas juntam as gravações de cada palavra.
-Só se faltar alguma palavra é usada a voz do próprio celular (apenas vozes do Brasil).
+Duas vozes gravadas (neural, iguais em qualquer celular): **Antonio** e **Francisca**. A escolha fica no fim da página.
 
-Depois de mudar ou acrescentar frases/palavras no `index.html`, gere os áudios de novo:
+- Frases prontas usam a gravação inteira.
+- Frases montadas ou digitadas juntam as gravações de cada palavra. O vocabulário tem os botões, cerca de 3.500 palavras mais usadas do português (`tools/frequentes.txt`), termos de saúde e hospital (`tools/vocabulario_saude.txt`) e números de 0 a 100.
+- Só se faltar alguma palavra é usada a voz do próprio celular (apenas vozes do Brasil). O app mostra quais palavras faltaram.
+
+Para acrescentar palavras, coloque-as em `tools/vocabulario_saude.txt` e gere os áudios de novo:
 
 ```
 pip install edge-tts

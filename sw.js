@@ -1,15 +1,15 @@
 // Cache para o app abrir mesmo sem internet (ex.: hospital com sinal fraco)
-var CACHE = "comunicacao-v6";
+var CACHE = "comunicacao-v7";
 var FILES = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png", "audio/vozes.json"];
 
 self.addEventListener("install", function(e){
   e.waitUntil(caches.open(CACHE).then(function(c){
     return c.addAll(FILES).then(function(){
       // Guarda também os áudios da voz padrão (frases prontas e palavras)
-      return fetch("audio/vozes.json").then(function(r){ return r.json(); }).then(function(vozes){
-        // voz padrão; a outra voz é baixada pela página quando for escolhida
-        var v = vozes.antonio, urls = [];
-        [v.frases, v.palavras].forEach(function(m){ Object.keys(m).forEach(function(k){ if(urls.indexOf(m[k]) < 0) urls.push(m[k]); }); });
+      return fetch("audio/vozes.json").then(function(r){ return r.json(); }).then(function(idx){
+        // voz padrão, frases e botões; a outra voz e o vocabulário grande são baixados quando usados
+        var urls = [];
+        [idx.frases, idx.palavras].forEach(function(m){ Object.keys(m).forEach(function(k){ var u = "audio/antonio/" + m[k] + ".mp3"; if(urls.indexOf(u) < 0) urls.push(u); }); });
         return c.addAll(urls);
       });
     });
