@@ -168,10 +168,10 @@ main{max-width:900px;margin:auto;padding:12px}
   </section>
 
   <section class="card">
-    <div class="section-head"><h2>⚙️ Voz do texto digitado</h2></div>
-    <p class="empty-note" style="margin-bottom:8px">Frases prontas e montadas usam voz gravada. Para o que for digitado, escolha a voz do celular que soa mais natural.</p>
+    <div class="section-head"><h2>⚙️ Voz</h2></div>
+    <p class="empty-note" style="margin-bottom:8px">Vozes gravadas, iguais em qualquer celular. Funcionam sem internet.</p>
     <div class="custom">
-      <select id="voiceSelect" aria-label="Voz do celular"></select>
+      <select id="voiceSelect" aria-label="Voz"></select>
       <button type="button" id="btnTestVoice">Testar</button>
     </div>
   </section>
@@ -285,16 +285,39 @@ main{max-width:900px;margin:auto;padding:12px}
 
   /* ---------- voz ---------- */
 
-  // 1) Frases prontas: áudio gravado com voz neural (audio/frases.json), tocado com reforço de volume.
-  // 2) Frases montadas: junta os áudios gravados de cada palavra tocada (audio/palavras.json).
-  // 3) Texto digitado: voz do próprio celular, escolhendo a mais natural disponível.
+  // Vozes gravadas (neural, iguais em qualquer celular): audio/vozes.json
+  // 1) Frase pronta → gravação da frase inteira.
+  // 2) Frase montada ou digitada → junta as gravações de cada palavra.
+  // 3) Só se faltar alguma palavra → voz do próprio celular (apenas vozes do Brasil).
 
-  var VOICE_KEY = "comunicacao.voz";
-  var clips = {}, wordClips = {}, buffers = {}, currentSrcs = [], audioCtx = null, master = null;
+  var VOICE_KEY = "comunicacao.vozGravada";
+  var vozes = {}, buffers = {}, currentSrcs = [], audioCtx = null, master = null;
   var WORD_GAP = 0.06; // pausa (s) entre palavras juntadas
 
-  fetch("audio/frases.json").then(function(r){ return r.json(); }).then(function(m){ clips = m; }).catch(function(){});
-  fetch("audio/palavras.json").then(function(r){ return r.json(); }).then(function(m){ wordClips = m; }).catch(function(){});
+  function voiceId(){
+    var id = null;
+    try{ id = localStorage.getItem(VOICE_KEY); }catch(e){}
+    return vozes[id] ? id : "antonio";
+  }
+  function voz(){ return vozes[voiceId()] || {frases:{}, palavras:{}}; }
+
+  fetch("audio/vozes.json").then(function(r){ return r.json(); }).then(function(m){
+    vozes = m;
+    renderVoicePicker();
+    setTimeout(function(){ prefetchVoice(voiceId()); }, 3000);
+  }).catch(function(){});
+
+  // Baixa todos os áudios da voz escolhida para funcionar sem internet
+  function prefetchVoice(id){
+    var v = vozes[id]; if(!v) return;
+    var urls = [];
+    [v.frases, v.palavras].forEach(function(m){ Object.keys(m).forEach(function(k){ if(urls.indexOf(m[k]) < 0) urls.push(m[k]); }); });
+    (function next(){
+      var batch = urls.splice(0, 6);
+      if(!batch.length) return;
+      Promise.all(batch.map(function(u){ return fetch(u).catch(function(){}); })).then(next);
+    })();
+  }
 
   function getCtx(){
     try{
@@ -333,28 +356,25 @@ main{max-width:900px;margin:auto;padding:12px}
     if("speechSynthesis" in window) window.speechSynthesis.cancel();
   }
 
-  var systemVoices = [], voice = null;
+  // Voz do celular (último recurso): só vozes do Brasil; Portugal/outros só se não houver nenhuma
+  var systemVoice = null;
   function voiceScore(v){
     var s = 0;
-    if(/^pt[-_]BR/i.test(v.lang)) s += 20; else if(/^pt/i.test(v.lang)) s += 10;
     if(/natural|neural|premium|enhanced|aprimorad|online/i.test(v.name)) s += 8;
     if(/google/i.test(v.name)) s += 4;
-    if(v.localService === false) s += 2;
+    if(v.localService === false) s += 1;
     return s;
   }
-  function loadVoices(){
-    if(!("speechSynthesis" in window)) return;
-    systemVoices = (window.speechSynthesis.getVoices() || [])
-      .filter(function(v){ return /^pt/i.test(v.lang); })
-      .sort(function(a, b){ return voiceScore(b) - voiceScore(a); });
-    var saved = null;
-    try{ saved = localStorage.getItem(VOICE_KEY); }catch(e){}
-    voice = systemVoices.filter(function(v){ return v.voiceURI === saved; })[0] || systemVoices[0] || null;
-    renderVoicePicker();
+  function loadSystemVoices(){
+    var all = window.speechSynthesis.getVoices() || [];
+    var br = all.filter(function(v){ return /^pt[-_]BR/i.test(v.lang); });
+    var list = br.length ? br : all.filter(function(v){ return /^pt/i.test(v.lang); });
+    list.sort(function(a, b){ return voiceScore(b) - voiceScore(a); });
+    systemVoice = list[0] || null;
   }
   if("speechSynthesis" in window){
-    loadVoices();
-    if("onvoiceschanged" in window.speechSynthesis) window.speechSynthesis.onvoiceschanged = loadVoices;
+    loadSystemVoices();
+    if("onvoiceschanged" in window.speechSynthesis) window.speechSynthesis.onvoiceschanged = loadSystemVoices;
   }
 
   function speakSystem(text){
@@ -365,9 +385,8 @@ main{max-width:900px;margin:auto;padding:12px}
     try{
       var u = new SpeechSynthesisUtterance(text);
       u.lang = "pt-BR";
-      if(voice) u.voice = voice;
+      if(systemVoice) u.voice = systemVoice;
       u.rate = 0.95;
-      u.pitch = 1;
       u.volume = 1;
       window.speechSynthesis.speak(u);
     }catch(e){
@@ -406,11 +425,33 @@ main{max-width:900px;margin:auto;padding:12px}
     });
   }
 
-  // Áudios para o texto: a frase inteira gravada, ou uma gravação por palavra tocada
+  function norm(s){ return s.toLowerCase().replace(/[.,;:!?…"“”()]/g, " ").replace(/\s+/g, " ").trim(); }
+
+  // Texto digitado → palavras gravadas, pegando primeiro as expressões mais longas ("não quero", "na cabeça")
+  function tokenizeTyped(text){
+    var dict = voz().palavras, parts = norm(text).split(" "), out = [], i = 0;
+    if(!parts[0]) return null;
+    while(i < parts.length){
+      var found = 0;
+      for(var len = Math.min(4, parts.length - i); len > 0; len--){
+        if(dict[parts.slice(i, i + len).join(" ")]){ found = len; break; }
+      }
+      if(!found) return null;
+      out.push(parts.slice(i, i + found).join(" "));
+      i += found;
+    }
+    return out;
+  }
+
+  // Áudios para o texto: frase inteira gravada, ou uma gravação por palavra
   function clipsFor(text, tokens){
-    if(clips[text]) return [clips[text]];
-    if(!tokens || !tokens.length) return null;
-    var urls = tokens.map(function(w){ return wordClips[w.toLowerCase()]; });
+    var v = voz();
+    if(v.frases[text]) return [v.frases[text]];
+    var key = norm(text);
+    for(var f in v.frases){ if(norm(f) === key) return [v.frases[f]]; }
+    tokens = tokens && tokens.length ? tokens : tokenizeTyped(text);
+    if(!tokens) return null;
+    var urls = tokens.map(function(w){ return v.palavras[w.toLowerCase()]; });
     return urls.every(Boolean) ? urls : null;
   }
 
@@ -428,20 +469,13 @@ main{max-width:900px;margin:auto;padding:12px}
 
   function renderVoicePicker(){
     var sel = document.getElementById("voiceSelect");
-    if(!sel) return;
     sel.innerHTML = "";
-    if(!systemVoices.length){
+    var current = voiceId();
+    Object.keys(vozes).forEach(function(id){
       var o = document.createElement("option");
-      o.textContent = "Nenhuma voz em português encontrada";
-      sel.appendChild(o); sel.disabled = true;
-      return;
-    }
-    sel.disabled = false;
-    systemVoices.forEach(function(v){
-      var o = document.createElement("option");
-      o.value = v.voiceURI;
-      o.textContent = v.name + (v.localService === false ? " (online)" : "");
-      if(voice && v.voiceURI === voice.voiceURI) o.selected = true;
+      o.value = id;
+      o.textContent = vozes[id].nome;
+      if(id === current) o.selected = true;
       sel.appendChild(o);
     });
   }
@@ -678,14 +712,11 @@ main{max-width:900px;margin:auto;padding:12px}
   document.getElementById("btnUse").addEventListener("click", useCustom);
 
   document.getElementById("voiceSelect").addEventListener("change", function(){
-    var uri = this.value;
-    voice = systemVoices.filter(function(v){ return v.voiceURI === uri; })[0] || voice;
-    try{ localStorage.setItem(VOICE_KEY, uri); }catch(e){}
+    try{ localStorage.setItem(VOICE_KEY, this.value); }catch(e){}
+    prefetchVoice(this.value);
+    speak(voz().teste);
   });
-  document.getElementById("btnTestVoice").addEventListener("click", function(){
-    stopVoice();
-    speakSystem("Olá, esta é a voz para o que eu digitar.");
-  });
+  document.getElementById("btnTestVoice").addEventListener("click", function(){ speak(voz().teste); });
   document.getElementById("customText").addEventListener("keydown", function(e){
     if(e.key === "Enter"){ e.preventDefault(); useCustom(); }
   });

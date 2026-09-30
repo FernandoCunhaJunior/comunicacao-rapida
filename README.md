@@ -18,11 +18,13 @@ Abra o link do GitHub Pages no celular e:
 
 ## Voz
 
-As frases prontas usam áudios gravados com voz neural (`audio/`). Depois de mudar ou acrescentar frases no `index.html`, gere os áudios de novo:
+Duas vozes gravadas (neural, iguais em qualquer celular): **Antonio** e **Francisca** — escolha no fim da página.
+Frases prontas usam a gravação inteira; frases montadas ou digitadas juntam as gravações de cada palavra.
+Só se faltar alguma palavra é usada a voz do próprio celular (apenas vozes do Brasil).
+
+Depois de mudar ou acrescentar frases/palavras no `index.html`, gere os áudios de novo:
 
 ```
 pip install edge-tts
 python tools/gerar_audios.py
 ```
-
-Frases montadas juntam as gravações de cada palavra (`audio/palavras.json`). Só o texto digitado usa a voz do próprio celular (dá para escolher a voz no fim da página).

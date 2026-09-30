@@ -1,16 +1,15 @@
 // Cache para o app abrir mesmo sem internet (ex.: hospital com sinal fraco)
-var CACHE = "comunicacao-v4";
-var FILES = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png", "audio/frases.json", "audio/palavras.json"];
+var CACHE = "comunicacao-v5";
+var FILES = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png", "audio/vozes.json"];
 
 self.addEventListener("install", function(e){
   e.waitUntil(caches.open(CACHE).then(function(c){
     return c.addAll(FILES).then(function(){
-      // Guarda também todos os áudios (frases prontas e palavras)
-      return Promise.all(["audio/frases.json", "audio/palavras.json"].map(function(f){
-        return fetch(f).then(function(r){ return r.json(); });
-      })).then(function(maps){
-        var urls = [];
-        maps.forEach(function(m){ Object.keys(m).forEach(function(k){ if(urls.indexOf(m[k]) < 0) urls.push(m[k]); }); });
+      // Guarda também os áudios da voz padrão (frases prontas e palavras)
+      return fetch("audio/vozes.json").then(function(r){ return r.json(); }).then(function(vozes){
+        // voz padrão; a outra voz é baixada pela página quando for escolhida
+        var v = vozes.antonio, urls = [];
+        [v.frases, v.palavras].forEach(function(m){ Object.keys(m).forEach(function(k){ if(urls.indexOf(m[k]) < 0) urls.push(m[k]); }); });
         return c.addAll(urls);
       });
     });
