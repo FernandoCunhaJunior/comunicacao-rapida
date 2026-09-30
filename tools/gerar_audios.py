@@ -38,23 +38,41 @@ def frases():
     return list(dict.fromkeys(t for t in textos if re.search(r"[.!?]$", t)))
 
 
+# Palavras muito curtas que, sozinhas, a voz leria como letra ("o" → "ó").
+# Aqui vai como deve SOAR.
+PRONUNCIA = {"e": "i", "o": "u", "de": "di"}
+
+
+def palavras():
+    """Cada botão de "Montar frase" vira um áudio; o app junta na ordem tocada."""
+    bloco = re.search(r"var categories = \{(.*?)\n  \};", html, re.S).group(1)
+    lista = ["Está doendo"]  # início usado pelo botão "Onde dói…"
+    for linha in re.findall(r"\[(.*?)\]", bloco):
+        lista += re.findall(r'"([^"]*)"', linha)
+    return list(dict.fromkeys(p.lower() for p in lista))
+
+
+async def gerar(texto, sufixo=""):
+    nome = hashlib.md5((texto + sufixo).encode("utf-8")).hexdigest()[:10] + ".mp3"
+    destino = OUT / nome
+    if not destino.exists():
+        await edge_tts.Communicate(texto, VOICE, rate=RATE, volume=VOLUME).save(str(destino))
+        print("gerado:", texto)
+    return "audio/" + nome
+
+
 async def main():
     OUT.mkdir(exist_ok=True)
-    mapa = {}
-    for texto in frases():
-        nome = hashlib.md5(texto.encode("utf-8")).hexdigest()[:10] + ".mp3"
-        destino = OUT / nome
-        if not destino.exists():
-            await edge_tts.Communicate(texto, VOICE, rate=RATE, volume=VOLUME).save(str(destino))
-            print("gerado:", texto)
-        mapa[texto] = "audio/" + nome
+    mapa = {t: await gerar(t) for t in frases()}
+    mapa_palavras = {p: await gerar(PRONUNCIA.get(p, p), "|palavra") for p in palavras()}
     # remove áudios que não são mais usados
-    usados = {pathlib.Path(p).name for p in mapa.values()}
+    usados = {pathlib.Path(p).name for p in list(mapa.values()) + list(mapa_palavras.values())}
     for f in OUT.glob("*.mp3"):
         if f.name not in usados:
             f.unlink()
     (OUT / "frases.json").write_text(json.dumps(mapa, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(len(mapa), "frases")
+    (OUT / "palavras.json").write_text(json.dumps(mapa_palavras, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(len(mapa), "frases,", len(mapa_palavras), "palavras")
 
 
 asyncio.run(main())

@@ -1,14 +1,17 @@
 // Cache para o app abrir mesmo sem internet (ex.: hospital com sinal fraco)
-var CACHE = "comunicacao-v3";
-var FILES = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png", "audio/frases.json"];
+var CACHE = "comunicacao-v4";
+var FILES = ["./", "index.html", "manifest.webmanifest", "icon.svg", "icon-180.png", "icon-192.png", "icon-512.png", "audio/frases.json", "audio/palavras.json"];
 
 self.addEventListener("install", function(e){
   e.waitUntil(caches.open(CACHE).then(function(c){
     return c.addAll(FILES).then(function(){
-      // Guarda também todos os áudios das frases prontas
-      return fetch("audio/frases.json").then(function(r){ return r.json(); }).then(function(map){
-        var urls = Object.keys(map).map(function(k){ return map[k]; });
-        return c.addAll(urls.filter(function(u, i){ return urls.indexOf(u) === i; }));
+      // Guarda também todos os áudios (frases prontas e palavras)
+      return Promise.all(["audio/frases.json", "audio/palavras.json"].map(function(f){
+        return fetch(f).then(function(r){ return r.json(); });
+      })).then(function(maps){
+        var urls = [];
+        maps.forEach(function(m){ Object.keys(m).forEach(function(k){ if(urls.indexOf(m[k]) < 0) urls.push(m[k]); }); });
+        return c.addAll(urls);
       });
     });
   }));

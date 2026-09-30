@@ -168,8 +168,8 @@ main{max-width:900px;margin:auto;padding:12px}
   </section>
 
   <section class="card">
-    <div class="section-head"><h2>⚙️ Voz das frases montadas</h2></div>
-    <p class="empty-note" style="margin-bottom:8px">As frases prontas já usam voz gravada. Para frases montadas ou digitadas, escolha a voz do celular que soa mais natural.</p>
+    <div class="section-head"><h2>⚙️ Voz do texto digitado</h2></div>
+    <p class="empty-note" style="margin-bottom:8px">Frases prontas e montadas usam voz gravada. Para o que for digitado, escolha a voz do celular que soa mais natural.</p>
     <div class="custom">
       <select id="voiceSelect" aria-label="Voz do celular"></select>
       <button type="button" id="btnTestVoice">Testar</button>
@@ -248,10 +248,14 @@ main{max-width:900px;margin:auto;padding:12px}
   /* ---------- frase ---------- */
 
   function capitalize(s){ return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+  // "Eu" + "Quero" → "Eu quero": só a primeira palavra fica com maiúscula
+  function joinWords(){
+    return words.map(function(w, i){ return i ? w.charAt(0).toLowerCase() + w.slice(1) : w; }).join(" ");
+  }
 
   function currentText(){
     if(!words.length) return "";
-    var t = capitalize(words.join(" "));
+    var t = capitalize(joinWords());
     // Frase montada ganha ponto final ao ser mostrada/falada
     if(!/[.!?]$/.test(t)) t += ".";
     return t;
@@ -259,7 +263,7 @@ main{max-width:900px;margin:auto;padding:12px}
 
   function render(){
     if(words.length){
-      sentenceEl.textContent = locked ? words.join(" ") : capitalize(words.join(" "));
+      sentenceEl.textContent = locked ? words.join(" ") : capitalize(joinWords());
       sentenceEl.classList.remove("empty");
     }else{
       sentenceEl.textContent = PLACEHOLDER;
@@ -282,12 +286,15 @@ main{max-width:900px;margin:auto;padding:12px}
   /* ---------- voz ---------- */
 
   // 1) Frases prontas: áudio gravado com voz neural (audio/frases.json), tocado com reforço de volume.
-  // 2) Frases montadas/digitadas: voz do próprio celular, escolhendo a mais natural disponível.
+  // 2) Frases montadas: junta os áudios gravados de cada palavra tocada (audio/palavras.json).
+  // 3) Texto digitado: voz do próprio celular, escolhendo a mais natural disponível.
 
   var VOICE_KEY = "comunicacao.voz";
-  var clips = {}, buffers = {}, currentSrc = null, audioCtx = null, master = null;
+  var clips = {}, wordClips = {}, buffers = {}, currentSrcs = [], audioCtx = null, master = null;
+  var WORD_GAP = 0.06; // pausa (s) entre palavras juntadas
 
   fetch("audio/frases.json").then(function(r){ return r.json(); }).then(function(m){ clips = m; }).catch(function(){});
+  fetch("audio/palavras.json").then(function(r){ return r.json(); }).then(function(m){ wordClips = m; }).catch(function(){});
 
   function getCtx(){
     try{
@@ -321,7 +328,8 @@ main{max-width:900px;margin:auto;padding:12px}
   }
 
   function stopVoice(){
-    if(currentSrc){ try{ currentSrc.stop(); }catch(e){} currentSrc = null; }
+    currentSrcs.forEach(function(s){ try{ s.stop(); }catch(e){} });
+    currentSrcs = [];
     if("speechSynthesis" in window) window.speechSynthesis.cancel();
   }
 
@@ -367,21 +375,55 @@ main{max-width:900px;margin:auto;padding:12px}
     }
   }
 
-  function speak(text){
-    text = text || currentText();
-    if(!text) return;
-    saveRecent(text);
-    stopVoice();
-    var url = clips[text], ctx = url && getCtx();
-    if(!ctx){ speakSystem(text); return; }
-    loadBuffer(ctx, url).then(function(buf){
+  // Trecho com som de cada gravação (sem o silêncio do começo/fim), para juntar palavras sem buracos
+  function voicedRange(buf){
+    if(buf._range) return buf._range;
+    var d = buf.getChannelData(0), n = d.length, th = 0.02, a = 0, b = n - 1;
+    while(a < n && Math.abs(d[a]) < th) a++;
+    while(b > a && Math.abs(d[b]) < th) b--;
+    var pad = Math.round(0.03 * buf.sampleRate);
+    a = Math.max(0, a - pad); b = Math.min(n - 1, b + pad);
+    buf._range = [a / buf.sampleRate, (b - a) / buf.sampleRate];
+    return buf._range;
+  }
+
+  function playClips(ctx, urls){
+    return Promise.all(urls.map(function(u){ return loadBuffer(ctx, u); })).then(function(bufs){
       stopVoice();
-      var src = ctx.createBufferSource();
-      src.buffer = buf;
-      src.connect(master);
-      src.start();
-      currentSrc = src;
-    }).catch(function(){ speakSystem(text); });
+      var t = ctx.currentTime + 0.05;
+      bufs.forEach(function(buf){
+        var src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(master);
+        if(bufs.length === 1){ src.start(t); }
+        else{
+          var r = voicedRange(buf);
+          src.start(t, r[0], r[1]);
+          t += r[1] + WORD_GAP;
+        }
+        currentSrcs.push(src);
+      });
+    });
+  }
+
+  // Áudios para o texto: a frase inteira gravada, ou uma gravação por palavra tocada
+  function clipsFor(text, tokens){
+    if(clips[text]) return [clips[text]];
+    if(!tokens || !tokens.length) return null;
+    var urls = tokens.map(function(w){ return wordClips[w.toLowerCase()]; });
+    return urls.every(Boolean) ? urls : null;
+  }
+
+  function currentTokens(){ return (!locked && words.length) ? words.slice() : null; }
+
+  function speak(text, tokens){
+    if(!text){ text = currentText(); tokens = currentTokens(); }
+    if(!text) return;
+    saveRecent(text, tokens);
+    stopVoice();
+    var urls = clipsFor(text, tokens), ctx = urls && getCtx();
+    if(!ctx){ speakSystem(text); return; }
+    playClips(ctx, urls).catch(function(){ speakSystem(text); });
   }
 
   function renderVoicePicker(){
@@ -407,9 +449,10 @@ main{max-width:900px;margin:auto;padding:12px}
   /* ---------- tela grande ---------- */
 
   function showBig(text, alertMode){
-    text = text || currentText();
+    var tokens = null;
+    if(!text){ text = currentText(); tokens = currentTokens(); }
     if(!text) return;
-    saveRecent(text);
+    saveRecent(text, tokens);
     document.getElementById("overlayText").textContent = text;
     overlay.classList.toggle("alertmode", !!alertMode);
     overlay.classList.add("show");
@@ -479,12 +522,15 @@ main{max-width:900px;margin:auto;padding:12px}
 
   /* ---------- últimas frases ---------- */
 
+  // Cada item: {t: texto, w: palavras tocadas (para falar com as gravações) ou null}
   function loadRecent(){
-    try{ return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; }catch(e){ return []; }
+    var list;
+    try{ list = JSON.parse(localStorage.getItem(RECENT_KEY)) || []; }catch(e){ list = []; }
+    return list.map(function(it){ return typeof it === "string" ? {t: it, w: null} : it; });
   }
-  function saveRecent(text){
-    var list = loadRecent().filter(function(t){ return t !== text; });
-    list.unshift(text);
+  function saveRecent(text, tokens){
+    var list = loadRecent().filter(function(it){ return it.t !== text; });
+    list.unshift({t: text, w: tokens || null});
     list = list.slice(0, 8);
     try{ localStorage.setItem(RECENT_KEY, JSON.stringify(list)); }catch(e){}
     renderRecent(list);
@@ -500,11 +546,14 @@ main{max-width:900px;margin:auto;padding:12px}
       box.appendChild(p);
       return;
     }
-    list.forEach(function(t){
+    list.forEach(function(it){
       var b = document.createElement("button");
       b.type = "button";
-      b.textContent = t;
-      b.addEventListener("click", function(){ setSentence(t); scrollTop(); });
+      b.textContent = it.t;
+      b.addEventListener("click", function(){
+        if(it.w){ words = it.w.slice(); locked = false; render(); } else { setSentence(it.t); }
+        scrollTop();
+      });
       box.appendChild(b);
     });
   }
@@ -635,7 +684,7 @@ main{max-width:900px;margin:auto;padding:12px}
   });
   document.getElementById("btnTestVoice").addEventListener("click", function(){
     stopVoice();
-    speakSystem("Olá, esta é a voz para as frases que eu montar.");
+    speakSystem("Olá, esta é a voz para o que eu digitar.");
   });
   document.getElementById("customText").addEventListener("keydown", function(e){
     if(e.key === "Enter"){ e.preventDefault(); useCustom(); }

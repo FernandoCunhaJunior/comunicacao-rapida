@@ -25,4 +25,4 @@ pip install edge-tts
 python tools/gerar_audios.py
 ```
 
-Frases montadas palavra por palavra ou digitadas usam a voz do próprio celular (dá para escolher a voz no fim da página).
+Frases montadas juntam as gravações de cada palavra (`audio/palavras.json`). Só o texto digitado usa a voz do próprio celular (dá para escolher a voz no fim da página).
